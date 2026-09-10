@@ -21,4 +21,5 @@ StandardError=journal
 SyslogIdentifier=pxm
 
 [Install]
+Alias=pxm.service
 WantedBy=multi-user.target
