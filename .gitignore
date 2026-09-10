@@ -1,0 +1,10 @@
+node_modules/
+logs/
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+.nyc_output/
+*.tgz
+.DS_Store

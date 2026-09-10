@@ -1,0 +1,24 @@
+[Unit]
+Description=Paradox Master (PxM)
+Documentation=file:///opt/paradox/apps/PxM/docs/SPEC.md
+After=network-online.target mosquitto.service
+Wants=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+User=paradox
+Group=paradox
+WorkingDirectory=/opt/paradox/apps/PxM
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/node /opt/paradox/apps/PxM/src/pxm.js --config /opt/paradox/config/pxm.ini
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=5min
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pxm
+
+[Install]
+WantedBy=multi-user.target
