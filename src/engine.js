@@ -52,6 +52,13 @@ class PxmEngine {
       delete this.passports[slotId];
     }
 
+    // Players start with omit-mediaId paths. After a pack tree lives under
+    // {media_dir}/{id}/, they must receive switchMedia when they come online
+    // (PxM may have booted first; commands are not retained).
+    if (prev === 'offline' && next !== 'offline') {
+      this._ensureSlotMedia(slotId, true);
+    }
+
     this.publishState();
 
     if (
@@ -276,6 +283,15 @@ class PxmEngine {
     passport.mediaId = mediaId;
     this.slotMediaIds[slotId] = mediaId;
     this._fanOutSwitch(slotId, mediaId, false);
+  }
+
+  _ensureSlotMedia(slotId, refresh) {
+    const mediaId = this.slotMediaIds[slotId] != null
+      ? this.slotMediaIds[slotId]
+      : this.defaultMediaId;
+    if (mediaId == null) return;
+    this.slotMediaIds[slotId] = mediaId;
+    this._fanOutSwitch(slotId, mediaId, refresh);
   }
 
   _fanOutSwitch(slotId, mediaId, refresh) {

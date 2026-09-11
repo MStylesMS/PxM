@@ -34,9 +34,10 @@ describe('media catalog + startGroup', () => {
     assert.equal(starts[0].payload.passport.mediaId, 2);
     const switched = bus.of('paradox/tfd/elevator/pfx/commands')
       .filter((m) => m.payload.command === 'switchMedia');
-    assert.equal(switched.length, 1);
-    assert.equal(switched[0].payload.mediaId, 2);
-    assert.equal(switched[0].payload.refresh, false);
+    assert.ok(switched.length >= 1);
+    const last = switched[switched.length - 1];
+    assert.equal(last.payload.mediaId, 2);
+    assert.equal(last.payload.refresh, false);
     const state = bus.of('paradox/tfd/master/state').pop();
     assert.equal(state.payload.chambers.chamber_1.mediaId, 2);
     assert.equal(state.payload.defaultMediaId, 1);
@@ -86,6 +87,19 @@ describe('media catalog + startGroup', () => {
     const switched = bus.of('paradox/tfd/elevator/pfx/commands')
       .filter((m) => m.payload.command === 'switchMedia' && m.payload.mediaId === 'v1');
     assert.equal(switched.length, 0);
+  });
+});
+
+describe('online fan-out of default pack', () => {
+  it('sends switchMedia refresh when a chamber leaves offline', () => {
+    const { engine, bus } = makeMediaEngine();
+    engine.applyChamberState('chamber_1', { gameState: 'ready' });
+    const switched = bus.of('paradox/tfd/elevator/pfx/commands')
+      .filter((m) => m.payload.command === 'switchMedia');
+    assert.equal(switched.length, 1);
+    assert.equal(switched[0].payload.mediaId, 1);
+    assert.equal(switched[0].payload.refresh, true);
+    assert.equal(engine.snapshot().chambers.chamber_1.mediaId, 1);
   });
 });
 
