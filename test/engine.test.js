@@ -41,9 +41,13 @@ describe('PxmEngine startGroup', () => {
     assert.equal(starts.length, 1);
     assert.equal(starts[0].payload.command, 'start');
     assert.equal(starts[0].payload.groupId, r.passport.groupId);
+    assert.equal(starts[0].payload.mediaId, undefined);
     const state = bus.of('paradox/tfd/master/state').pop();
     assert.equal(state.payload.nextGroupName, 'Group 2 on 09/09/2026');
     assert.equal(state.retain, true);
+    assert.equal(state.payload.mediaCatalog, undefined);
+    assert.equal(state.payload.defaultMediaId, undefined);
+    assert.equal(state.payload.chambers.chamber_1.mediaId, undefined);
   });
 });
 

@@ -5,6 +5,8 @@ const { LaunchRegistry } = require('./launchRegistry');
 const { localDateKey } = require('./proposedName');
 const { normalizeOccupancy, isSolvedFamily } = require('./occupancy');
 const { pickNext, planProfile } = require('./handoff');
+const { sanitizeMediaId, matchRestartTopics, catalogById } = require('./media');
+const { csv, truthy } = require('./config');
 
 class PxmEngine {
   constructor({ config, publish, registry, now, schedule } = {}) {
@@ -23,6 +25,9 @@ class PxmEngine {
     this.passports = {};
     this.prevOccupancy = {};
     this.timers = [];
+    this.slotMediaIds = {};
+    this.defaultMediaId = config.defaultMediaId;
+    this._configWarningsPublished = false;
 
     for (const id of config.slotIds) {
       this.occupancy[id] = 'offline';
@@ -83,6 +88,8 @@ class PxmEngine {
     if (name === 'startGroup') return this.startGroup(cmd);
     if (name === 'promote') return this.promote(cmd);
     if (name === 'abortGroup') return this.abortGroup(cmd);
+    if (name === 'switchMedia') return this.switchMedia(cmd);
+    if (name === 'restartProcess') return this.restartProcess(cmd);
     return { ok: false, reason: 'unknown-command', command: name };
   }
 
@@ -98,6 +105,7 @@ class PxmEngine {
     });
     if (!result.ok) return result;
 
+    this._applyStartMedia(result.passport, cmd, first);
     this.passports[first] = result.passport;
     const topic = `${this.config.slots[first].gameTopic}/commands`;
     this.publish(topic, Object.assign({ command: 'start' }, result.passport, {
@@ -132,7 +140,13 @@ class PxmEngine {
     }
 
     const toSlot = this.config.slots[picked.to];
-    if (passport) this.passports[picked.to] = { ...passport };
+    if (passport) {
+      this.passports[picked.to] = { ...passport };
+      if (passport.mediaId != null) {
+        this.slotMediaIds[picked.to] = passport.mediaId;
+        this._fanOutSwitch(picked.to, passport.mediaId, false);
+      }
+    }
     const profileName = fromSlot.handoff;
     if (profileName) {
       this._runProfile(profileName, {
@@ -165,6 +179,137 @@ class PxmEngine {
     this.publishEvent('group_aborted', { groupId: groupId || null, slots: targets });
     this.publishState();
     return { ok: true, slots: targets };
+  }
+
+  switchMedia(cmd = {}) {
+    let mediaId = null;
+    if (cmd.mediaId !== null) {
+      const parsed = sanitizeMediaId(cmd.mediaId);
+      if (!parsed.ok) {
+        this.publishWarning('illegal-media-id', { mediaId: cmd.mediaId });
+        return this.fail('illegal-media-id', { mediaId: cmd.mediaId });
+      }
+      mediaId = parsed.value;
+    }
+
+    const refresh = truthy(cmd.refresh);
+    const listed = this._listedSlots(cmd.slots);
+    let targets;
+    if (!listed) {
+      if (this._catalogLoaded()) this.defaultMediaId = mediaId;
+      targets = this.config.slotIds.filter((id) => this.occupancy[id] !== 'running');
+    } else {
+      targets = listed;
+    }
+
+    for (const slotId of targets) {
+      if (mediaId == null) delete this.slotMediaIds[slotId];
+      else this.slotMediaIds[slotId] = mediaId;
+      this._fanOutSwitch(slotId, mediaId, refresh);
+    }
+    this.publishEvent('media_switched', { mediaId, refresh, slots: targets });
+    this.publishState();
+    return { ok: true, mediaId, refresh, slots: targets };
+  }
+
+  restartProcess(cmd = {}) {
+    const slotId = this._resolveNamedSlot(cmd.slot || cmd.chamber);
+    const slot = slotId && this.config.slots[slotId];
+    if (!slot) return this.fail('unknown-slot', { slot: cmd.slot });
+    const process = cmd.process != null ? String(cmd.process).trim() : '';
+    if (!process) return this.fail('process-required', { slot: slotId });
+    const topics = matchRestartTopics((slot.media && slot.media.restartTopics) || [], process);
+    if (!topics.length) {
+      return this.fail('unknown-restart-process', { slot: slotId, process });
+    }
+    for (const topic of topics) {
+      this.publish(topic, { command: 'restart' });
+    }
+    this.publishEvent('process_restarted', { slot: slotId, process, topics });
+    return { ok: true, slot: slotId, process, topics };
+  }
+
+  _catalogLoaded() {
+    return Array.isArray(this.config.mediaCatalog) && this.config.mediaCatalog.length > 0;
+  }
+
+  _listedSlots(raw) {
+    if (raw == null || raw === '') return null;
+    const names = Array.isArray(raw) ? raw.map((s) => String(s).trim()).filter(Boolean) : csv(raw);
+    if (!names.length) return null;
+    const out = [];
+    for (const name of names) {
+      if (this.config.slots[name]) {
+        out.push(name);
+        continue;
+      }
+      const byRole = this.config.slotIds.find((id) => this.config.slots[id].role === name);
+      if (byRole) out.push(byRole);
+    }
+    return out;
+  }
+
+  _applyStartMedia(passport, cmd, slotId) {
+    const raw = (cmd && cmd.mediaId != null && cmd.mediaId !== '')
+      ? cmd.mediaId
+      : (cmd && cmd.passport && cmd.passport.mediaId != null && cmd.passport.mediaId !== ''
+        ? cmd.passport.mediaId
+        : undefined);
+    let mediaId;
+    if (raw !== undefined) {
+      const parsed = sanitizeMediaId(raw);
+      if (!parsed.ok) {
+        this.publishWarning('illegal-media-id', { mediaId: raw });
+        mediaId = this.defaultMediaId;
+      } else {
+        mediaId = parsed.value;
+      }
+    } else if (passport.mediaId != null) {
+      mediaId = passport.mediaId;
+    } else {
+      mediaId = this.defaultMediaId;
+    }
+    if (mediaId == null) {
+      delete passport.mediaId;
+      return;
+    }
+    passport.mediaId = mediaId;
+    this.slotMediaIds[slotId] = mediaId;
+    this._fanOutSwitch(slotId, mediaId, false);
+  }
+
+  _fanOutSwitch(slotId, mediaId, refresh) {
+    const slot = this.config.slots[slotId];
+    if (!slot || !slot.media) return;
+    const pack = catalogById(this.config.mediaCatalog, mediaId);
+    const speechSet = new Set(slot.media.speechTopics || []);
+    const seen = new Set();
+    const topics = [...(slot.media.switchTopics || []), ...(slot.media.speechTopics || [])];
+    for (const topic of topics) {
+      if (!topic || seen.has(topic)) continue;
+      seen.add(topic);
+      const payload = { command: 'switchMedia', mediaId, refresh: !!refresh };
+      if (speechSet.has(topic) && pack) payload.language = pack.language;
+      this.publish(topic, payload);
+    }
+  }
+
+  _publishConfigWarnings() {
+    if (this._configWarningsPublished) return;
+    this._configWarningsPublished = true;
+    for (const w of this.config.mediaWarnings || []) {
+      const { warning, ...details } = w;
+      this.publishWarning(warning, details);
+    }
+  }
+
+  _resolveNamedSlot(raw) {
+    if (!raw) return null;
+    if (this.config.slots[raw]) return raw;
+    for (const [id, slot] of Object.entries(this.config.slots)) {
+      if (slot.role === raw || id === raw) return id;
+    }
+    return null;
   }
 
   _resolveFromSlot(cmd) {
@@ -221,18 +366,22 @@ class PxmEngine {
     for (const id of this.config.slotIds) {
       const slot = this.config.slots[id];
       const pass = this.passports[id];
-      chambers[id] = {
+      const row = {
         role: slot.role,
         status: this.occupancy[id],
         groupId: pass ? pass.groupId : null,
         name: pass ? pass.name : null,
       };
+      if (this._catalogLoaded() && this.slotMediaIds[id] != null) {
+        row.mediaId = this.slotMediaIds[id];
+      }
+      chambers[id] = row;
     }
     const required = this.config.bridgesRequired.length
       ? this.config.bridgesRequired
       : this.config.slotIds.slice(1);
     const bridgesOk = required.every((id) => this.occupancy[id] !== 'offline');
-    return {
+    const snap = {
       application: 'pxm',
       game: this.config.game,
       ts: new Date(this.now()).toISOString(),
@@ -245,9 +394,15 @@ class PxmEngine {
       chambers,
       chamber_1: chambers[this.config.firstSlot] || null,
     };
+    if (this._catalogLoaded()) {
+      snap.mediaCatalog = this.config.mediaCatalog;
+      if (this.defaultMediaId != null) snap.defaultMediaId = this.defaultMediaId;
+    }
+    return snap;
   }
 
   publishState(extra = {}) {
+    this._publishConfigWarnings();
     const snap = Object.assign(this.snapshot(), extra);
     this.publish(`${this.config.masterTopic}/state`, snap, { retain: true });
     return snap;

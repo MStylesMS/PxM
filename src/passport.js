@@ -2,6 +2,7 @@
 
 const { LaunchRegistry } = require('./launchRegistry');
 const { localDateKey } = require('./proposedName');
+const { sanitizeMediaId } = require('./media');
 
 function randomGroupId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -62,6 +63,7 @@ function buildPassport(cmd, { proposedName, now, defaultGame }) {
   const gameRaw = pick(src, nested, 'game', 'room', 'gameSlug', 'game_slug');
   const startedAt = pick(src, nested, 'startedAt', 'started_at')
     || new Date(now || Date.now()).toISOString();
+  const mediaRaw = pick(src, nested, 'mediaId', 'media_id');
 
   const passport = {
     groupId,
@@ -72,6 +74,10 @@ function buildPassport(cmd, { proposedName, now, defaultGame }) {
   if (size != null) passport.size = size;
   if (types.length) passport.types = types;
   if (notesRaw != null && String(notesRaw).trim()) passport.notes = String(notesRaw).trim();
+  if (mediaRaw !== undefined) {
+    const parsed = sanitizeMediaId(mediaRaw);
+    if (parsed.ok) passport.mediaId = parsed.value;
+  }
   return passport;
 }
 

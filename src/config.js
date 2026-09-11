@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const ini = require('ini');
+const { parseMediaCatalog, parseSlotMedia } = require('./media');
 
 function truthy(v) {
   if (v === true || v === 1) return true;
@@ -62,8 +63,11 @@ function loadConfig(filePath) {
       handoff: sec.handoff ? String(sec.handoff).trim() : null,
       stall: sec.stall ? String(sec.stall).trim() : null,
       isLast: truthy(sec.is_last),
+      media: parseSlotMedia(sec, csv),
     };
   }
+
+  const { catalog: mediaCatalog, defaultMediaId, warnings: mediaWarnings } = parseMediaCatalog(raw);
 
   const profiles = {};
   const handoffTree = raw.handoff && typeof raw.handoff === 'object' ? raw.handoff : {};
@@ -92,6 +96,9 @@ function loadConfig(filePath) {
     slots,
     firstSlot,
     profiles,
+    mediaCatalog,
+    defaultMediaId,
+    mediaWarnings,
   };
 }
 

@@ -110,4 +110,32 @@ function fakeClock() {
   };
 }
 
-module.exports = { writeSampleConfig, RecordingBus, fakeClock, SAMPLE_INI };
+const MEDIA_INI = `
+[media]
+default = 1
+
+[media.1]
+name = English — original trailer
+short_name = English
+description = Current show picture and English VO from the Crafty Fox trailer.
+language = en
+
+[media.2]
+name = Español — packed VO
+short_name = Español
+description = Same picture and timing as pack 1, with Spanish voice-over and PxT chrome.
+language = es
+
+[chamber.chamber_1.media]
+switch = paradox/tfd/elevator/pfx
+restart = paradox/tfd/elevator/pfx
+
+[chamber.chamber_2.media]
+switch = paradox/tfd/generator/pfx
+
+[chamber.chamber_3.media]
+switch = paradox/tfd/control/pfx/hdmi, paradox/tfd/control/pfx/audio, paradox/tfd/control/terminal
+speech = paradox/tfd/control/speech
+`;
+
+module.exports = { writeSampleConfig, RecordingBus, fakeClock, SAMPLE_INI, MEDIA_INI };

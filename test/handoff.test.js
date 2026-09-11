@@ -46,4 +46,16 @@ describe('planProfile', () => {
     assert.equal(planned[1].payload.groupId, 'g1');
     assert.equal(planned[1].payload.attach_passport, undefined);
   });
+
+  it('copies mediaId onto attach_passport start so the pack survives promote', () => {
+    const planned = planProfile([
+      { delayMs: 0, topic: '{to}/commands', payload: { command: 'start', attach_passport: true } },
+    ], { fromTopic: 'paradox/tfd/elevator', toTopic: 'paradox/tfd/generator' }, {
+      groupId: 'g1',
+      name: 'A',
+      mediaId: 2,
+    });
+    assert.equal(planned[0].payload.mediaId, 2);
+    assert.equal(planned[0].payload.passport.mediaId, 2);
+  });
 });
