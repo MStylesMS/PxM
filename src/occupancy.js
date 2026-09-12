@@ -43,6 +43,13 @@ function isSolvedFamily(payload) {
   return gs === 'solved' || gs === 'win' || gs === 'promoteending';
 }
 
+function isFailedFamily(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  const raw = payload.gameState || payload.status || payload.state || '';
+  const gs = String(raw).toLowerCase().replace(/[_-]/g, '');
+  return gs === 'failed' || gs === 'fail' || gs === 'timeoutending';
+}
+
 function isBusy(status) {
   return status === 'running' || status === 'ending';
 }
@@ -51,5 +58,6 @@ module.exports = {
   normalizeOccupancy,
   classifyGameState,
   isSolvedFamily,
+  isFailedFamily,
   isBusy,
 };

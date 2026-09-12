@@ -51,6 +51,36 @@ describe('PxmEngine startGroup', () => {
   });
 });
 
+describe('PxmEngine auto-handoff', () => {
+  it('does not auto-promote a gear-pane room test (no startGroup passport)', () => {
+    const { engine, bus } = makeEngine({ autoHandoff: true });
+    engine.applyChamberState('chamber_1', { gameState: 'ready' });
+    engine.applyChamberState('chamber_2', { gameState: 'ready' });
+    engine.applyChamberState('chamber_1', { gameState: 'gameplay' });
+    engine.applyChamberState('chamber_1', { gameState: 'solved' });
+
+    const gen = bus.commands('paradox/tfd/generator');
+    assert.equal(gen.length, 0);
+    assert.equal(engine.passports.chamber_2, undefined);
+  });
+
+  it('auto-promotes only after startGroup owns the slot', () => {
+    const { engine, bus, clock } = makeEngine({ autoHandoff: true });
+    engine.applyChamberState('chamber_1', { gameState: 'ready' });
+    engine.applyChamberState('chamber_2', { gameState: 'ready' });
+    engine.startGroup({ name: 'Crew', groupId: 'g-auto' });
+    engine.applyChamberState('chamber_1', { gameState: 'gameplay' });
+    engine.applyChamberState('chamber_1', { gameState: 'solved' });
+
+    const genPrep = bus.commands('paradox/tfd/generator').filter((m) => m.payload.command === 'prepare');
+    assert.equal(genPrep.length, 1);
+    clock.advance(45000);
+    const started = bus.commands('paradox/tfd/generator').filter((m) => m.payload.command === 'start');
+    assert.equal(started.length, 1);
+    assert.equal(started[0].payload.groupId, 'g-auto');
+  });
+});
+
 describe('PxmEngine promote / collision', () => {
   it('runs ch1-to-ch2 profile when generator is ready', () => {
     const { engine, bus, clock } = makeEngine();
@@ -63,6 +93,8 @@ describe('PxmEngine promote / collision', () => {
     const r = engine.promote({ from: 'chamber_1' });
     assert.equal(r.ok, true);
     assert.equal(r.to, 'chamber_2');
+    assert.equal(engine.passports.chamber_1, undefined);
+    assert.equal(engine.passports.chamber_2 && engine.passports.chamber_2.name, 'Crew');
 
     const elev = bus.commands('paradox/tfd/elevator').filter((m) => m.payload.command === 'openDoor');
     const genPrep = bus.commands('paradox/tfd/generator').filter((m) => m.payload.command === 'prepare');

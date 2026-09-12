@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeOccupancy, isSolvedFamily } = require('../src/occupancy');
+const { normalizeOccupancy, isSolvedFamily, isFailedFamily } = require('../src/occupancy');
 
 describe('normalizeOccupancy', () => {
   it('maps ready / running / ending / offline', () => {
@@ -26,5 +26,14 @@ describe('isSolvedFamily', () => {
   it('is true for solved / win', () => {
     assert.equal(isSolvedFamily({ gameState: 'solved' }), true);
     assert.equal(isSolvedFamily({ gameState: 'gameplay' }), false);
+  });
+});
+
+describe('isFailedFamily', () => {
+  it('is true for failed / timeout, not wait-gen', () => {
+    assert.equal(isFailedFamily({ gameState: 'failed' }), true);
+    assert.equal(isFailedFamily({ gameState: 'timeout-ending' }), true);
+    assert.equal(isFailedFamily({ gameState: 'wait-gen' }), false);
+    assert.equal(isFailedFamily({ gameState: 'solved' }), false);
   });
 });

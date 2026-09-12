@@ -3,7 +3,7 @@
 const { LaunchCoordinator } = require('./passport');
 const { LaunchRegistry } = require('./launchRegistry');
 const { localDateKey } = require('./proposedName');
-const { normalizeOccupancy, isSolvedFamily } = require('./occupancy');
+const { normalizeOccupancy, isSolvedFamily, isFailedFamily } = require('./occupancy');
 const { pickNext, planProfile } = require('./handoff');
 const { sanitizeMediaId, matchRestartTopics, catalogById } = require('./media');
 const { csv, truthy } = require('./config');
@@ -63,9 +63,10 @@ class PxmEngine {
 
     if (
       this.config.autoHandoff &&
+      this.passports[slotId] &&
       prev === 'running' &&
       next === 'ending' &&
-      isSolvedFamily(payload)
+      (isSolvedFamily(payload) || isFailedFamily(payload))
     ) {
       this.promote({ from: slotId, source: 'auto' });
     }
@@ -149,6 +150,7 @@ class PxmEngine {
     const toSlot = this.config.slots[picked.to];
     if (passport) {
       this.passports[picked.to] = { ...passport };
+      delete this.passports[fromId];
       if (passport.mediaId != null) {
         this.slotMediaIds[picked.to] = passport.mediaId;
         this._fanOutSwitch(picked.to, passport.mediaId, false);
