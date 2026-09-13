@@ -58,3 +58,5 @@ Illegal `mediaId` (`0`, `"v1"`, `../etc`): ignore the command, publish `warnings
 ## Chamber topics
 
 PxM **subscribes** `{game_topic}/state` per slot and **publishes** `{game_topic}/commands` (and any other topics listed in handoff/stall profiles). `switchMedia` / `restartProcess` also publish to per-slot `[chamber.N.media]` process bases (`{base}/commands`).
+
+For each configured **switch** base, PxM also **subscribes** `{base}/state` (retained PFx / PxT player state). When `mediaId` on that state does not match the slot’s assigned pack (`slotMediaIds[slot] ?? defaultMediaId`, treating omitted/`null` as unset), PxM publishes `{ command: switchMedia, mediaId, refresh: true }` to **that** `{base}/commands` only. Debounced ≥2s per topic. This complements the chamber offline→online fan-out for players that boot later.

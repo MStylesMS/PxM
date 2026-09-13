@@ -103,6 +103,80 @@ describe('online fan-out of default pack', () => {
   });
 });
 
+describe('player retained state media sync', () => {
+  const elevCmd = 'paradox/tfd/elevator/pfx/commands';
+
+  it('fans switchMedia when player reports null/undefined', () => {
+    const { engine, bus } = makeMediaEngine();
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { application: 'pfx' });
+    let switched = bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia');
+    assert.equal(switched.length, 1);
+    assert.equal(switched[0].payload.mediaId, 1);
+    assert.equal(switched[0].payload.refresh, true);
+
+    bus.published.length = 0;
+    engine._playerSwitchAt = {};
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: null });
+    switched = bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia');
+    assert.equal(switched.length, 1);
+    assert.equal(switched[0].payload.mediaId, 1);
+    assert.equal(switched[0].payload.refresh, true);
+  });
+
+  it('does not fan when player reports the matching mediaId', () => {
+    const { engine, bus } = makeMediaEngine();
+    engine.slotMediaIds.chamber_1 = 2;
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: 2 });
+    const switched = bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia');
+    assert.equal(switched.length, 0);
+
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: '2' });
+    assert.equal(
+      bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia').length,
+      0,
+    );
+  });
+
+  it('fans switchMedia when player reports a different mediaId', () => {
+    const { engine, bus } = makeMediaEngine();
+    engine.slotMediaIds.chamber_1 = 2;
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: 1 });
+    const switched = bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia');
+    assert.equal(switched.length, 1);
+    assert.equal(switched[0].payload.mediaId, 2);
+    assert.equal(switched[0].payload.refresh, true);
+    // Only that topic — not the whole slot / other chambers.
+    assert.equal(
+      bus.published.filter((m) => m.payload && m.payload.command === 'switchMedia').length,
+      1,
+    );
+  });
+
+  it('debounces per topic for at least 2s', () => {
+    const { engine, bus, clock } = makeMediaEngine();
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: null });
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: null });
+    assert.equal(
+      bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia').length,
+      1,
+    );
+
+    clock.advance(1999);
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: null });
+    assert.equal(
+      bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia').length,
+      1,
+    );
+
+    clock.advance(1);
+    engine.applyPlayerMediaState('chamber_1', elevCmd, { mediaId: null });
+    assert.equal(
+      bus.of(elevCmd).filter((m) => m.payload.command === 'switchMedia').length,
+      2,
+    );
+  });
+});
+
 describe('switchMedia fan-out + restartProcess', () => {
   it('omitting slots updates the default and idle slots only', () => {
     const { engine, bus } = makeMediaEngine();

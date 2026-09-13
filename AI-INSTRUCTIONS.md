@@ -32,6 +32,7 @@ PxM is a **thin multi-chamber coordinator**. It gates group launch, carries a le
 - Next-slot policy v0: `first_ready` only (`alternate` / `longest_idle` are config-shaped, unused)
 - Do not add HTTP/WS, visit-summary writers, or hint fan-out unless the spec says so
 - Never bypass the MQTT wrapper in the live process — tests inject a fake bus
+- Media: chamber offline→online still fans `switchMedia` to all slot switch/speech topics; additionally subscribe each configured switch topic’s `{base}/state` and re-publish to that topic only when `mediaId` ≠ `slotMediaIds[slot] ?? defaultMediaId` (debounce ≥2s per topic)
 
 ## Docs-first
 

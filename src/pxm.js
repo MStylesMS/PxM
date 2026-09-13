@@ -6,6 +6,7 @@ const minimist = require('minimist');
 const { loadConfig } = require('./config');
 const { MqttBus } = require('./mqtt');
 const { PxmEngine } = require('./engine');
+const { stateTopic } = require('./media');
 
 function main(argv = process.argv.slice(2)) {
   const args = minimist(argv);
@@ -38,10 +39,20 @@ function main(argv = process.argv.slice(2)) {
 
     for (const id of config.slotIds) {
       const slot = config.slots[id];
-      if (!slot.gameTopic) continue;
-      bus.subscribe(`${slot.gameTopic}/state`, (_topic, payload) => {
-        engine.applyChamberState(id, payload);
-      });
+      if (slot.gameTopic) {
+        bus.subscribe(`${slot.gameTopic}/state`, (_topic, payload) => {
+          engine.applyChamberState(id, payload);
+        });
+      }
+      // Players may boot after the chamber offline→online fan-out; commands are
+      // not retained. Sync from each switch topic's retained {base}/state.
+      for (const cmdTopic of (slot.media && slot.media.switchTopics) || []) {
+        const playerState = stateTopic(cmdTopic);
+        if (!playerState) continue;
+        bus.subscribe(playerState, (_topic, payload) => {
+          engine.applyPlayerMediaState(id, cmdTopic, payload);
+        });
+      }
     }
 
     engine.publishState();

@@ -11,6 +11,7 @@ PxM is **not** a game engine, media player, GPIO driver, or log viewer.
 - Run **handoff** from INI profiles (delay + MQTT publishes)
 - **Collision:** next slot busy → configured stall publishes, no start
 - Publish retained `{master}/state`
+- **Media packs:** fan `switchMedia` when a chamber leaves offline, and when a PFx/PxT player’s retained `{base}/state` reports a pack that does not match the slot’s assigned `mediaId` (players that boot later still get the pack; commands are not retained)
 
 ## Quick start
 

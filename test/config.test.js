@@ -37,6 +37,15 @@ describe('loadConfig', () => {
     assert.deepEqual(cfg.slots.chamber_3.media.speechTopics, ['paradox/tfd/control/speech/commands']);
   });
 
+  it('maps switch command topics to player state topics', () => {
+    const { stateTopic, mediaIdsEqual } = require('../src/media');
+    assert.equal(stateTopic('paradox/tfd/elevator/pfx'), 'paradox/tfd/elevator/pfx/state');
+    assert.equal(stateTopic('paradox/tfd/elevator/pfx/commands'), 'paradox/tfd/elevator/pfx/state');
+    assert.equal(mediaIdsEqual(1, '1'), true);
+    assert.equal(mediaIdsEqual(null, undefined), true);
+    assert.equal(mediaIdsEqual(1, null), false);
+  });
+
   it('refuses a pack with an unknown language and still loads the others', () => {
     const cfg = writeSampleConfig(`${MEDIA_INI}
 [media.3]

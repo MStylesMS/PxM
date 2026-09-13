@@ -31,6 +31,25 @@ function commandTopic(base) {
   return t.endsWith('/commands') ? t : `${t}/commands`;
 }
 
+/** Retained player state for a process base or `{base}/commands` topic. */
+function stateTopic(base) {
+  const t = String(base || '').trim().replace(/\/+$/, '');
+  if (!t) return '';
+  if (t.endsWith('/state')) return t;
+  if (t.endsWith('/commands')) return `${t.slice(0, -'/commands'.length)}/state`;
+  return `${t}/state`;
+}
+
+/** Compare pack ids; null/undefined match each other; "1" matches 1. */
+function mediaIdsEqual(a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  const na = Number(a);
+  const nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
+  return String(a) === String(b);
+}
+
 function parseMediaCatalog(raw) {
   const warnings = [];
   const catalog = [];
@@ -110,6 +129,8 @@ module.exports = {
   MEDIA_LANGUAGES,
   sanitizeMediaId,
   commandTopic,
+  stateTopic,
+  mediaIdsEqual,
   parseMediaCatalog,
   parseSlotMedia,
   matchRestartTopics,

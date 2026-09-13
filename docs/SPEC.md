@@ -33,6 +33,8 @@ PxM owns the site pack catalog. Players only see the integer `mediaId` (folder n
 - Publish `mediaCatalog` + `defaultMediaId` on retained master state when packs are loaded.
 - Store `chambers.chamber_N.mediaId` per slot so two concurrent groups can use different packs. A second slot must not overwrite the first.
 - `switchMedia` on the master topic fans out to configured per-slot switch (and speech) topics. Omit `slots` = default + every idle slot; never refresh a `running` chamber unless the GM listed it.
+- When a chamber leaves `offline`, fan `switchMedia` (`refresh: true`) to that slot’s switch/speech topics so players that were already up pick up the pack.
+- Also subscribe each configured **switch** topic’s retained `{base}/state` (PFx zones, PxT). If `payload.mediaId` differs from `slotMediaIds[slot] ?? defaultMediaId` (including player `null` / omitted), publish `switchMedia` to **that** `{base}/commands` only (`refresh: true`). Debounce ≥2s per topic so fan-out cannot loop. Players that start after the chamber transition still receive the pack (commands are not retained).
 - `restartProcess` publishes MQTT `{ command: restart }` to a configured process topic. It is **not** the media-switch path and does not SSH/`systemctl`.
 
 Omit every media field when no catalog is loaded.

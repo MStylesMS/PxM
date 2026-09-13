@@ -5,8 +5,11 @@ const { LaunchRegistry } = require('./launchRegistry');
 const { localDateKey } = require('./proposedName');
 const { normalizeOccupancy, isSolvedFamily, isFailedFamily } = require('./occupancy');
 const { pickNext, planProfile } = require('./handoff');
-const { sanitizeMediaId, matchRestartTopics, catalogById } = require('./media');
+const { sanitizeMediaId, matchRestartTopics, catalogById, mediaIdsEqual } = require('./media');
 const { csv, truthy } = require('./config');
+
+/** Min gap between switchMedia publishes to the same player topic (loop guard). */
+const PLAYER_MEDIA_DEBOUNCE_MS = 2000;
 
 class PxmEngine {
   constructor({ config, publish, registry, now, schedule } = {}) {
@@ -28,6 +31,8 @@ class PxmEngine {
     this.slotMediaIds = {};
     this.defaultMediaId = config.defaultMediaId;
     this._configWarningsPublished = false;
+    /** @type {Record<string, number>} last switchMedia publish time per command topic */
+    this._playerSwitchAt = {};
 
     for (const id of config.slotIds) {
       this.occupancy[id] = 'offline';
@@ -70,6 +75,23 @@ class PxmEngine {
     ) {
       this.promote({ from: slotId, source: 'auto' });
     }
+  }
+
+  /**
+   * Retained PFx/PxT `{base}/state`: if payload.mediaId ≠ assigned pack for the
+   * slot, publish switchMedia to that player's `{base}/commands` only.
+   * Debounced per topic so our own fan-out cannot loop.
+   */
+  applyPlayerMediaState(slotId, commandTopic, payload) {
+    if (!this.config.slots[slotId] || !commandTopic) return;
+    const assigned = this._assignedMediaId(slotId);
+    const reported = payload && typeof payload === 'object' ? payload.mediaId : undefined;
+    if (mediaIdsEqual(assigned, reported)) return;
+
+    const last = this._playerSwitchAt[commandTopic] || 0;
+    if (this.now() - last < PLAYER_MEDIA_DEBOUNCE_MS) return;
+
+    this._publishSwitchTopic(slotId, commandTopic, assigned, true);
   }
 
   markOfflineStale() {
@@ -287,28 +309,39 @@ class PxmEngine {
     this._fanOutSwitch(slotId, mediaId, false);
   }
 
-  _ensureSlotMedia(slotId, refresh) {
-    const mediaId = this.slotMediaIds[slotId] != null
+  _assignedMediaId(slotId) {
+    return this.slotMediaIds[slotId] != null
       ? this.slotMediaIds[slotId]
       : this.defaultMediaId;
+  }
+
+  _ensureSlotMedia(slotId, refresh) {
+    const mediaId = this._assignedMediaId(slotId);
     if (mediaId == null) return;
     this.slotMediaIds[slotId] = mediaId;
     this._fanOutSwitch(slotId, mediaId, refresh);
   }
 
+  _publishSwitchTopic(slotId, topic, mediaId, refresh) {
+    const slot = this.config.slots[slotId];
+    if (!slot || !slot.media || !topic) return;
+    const pack = catalogById(this.config.mediaCatalog, mediaId);
+    const speechSet = new Set(slot.media.speechTopics || []);
+    const payload = { command: 'switchMedia', mediaId, refresh: !!refresh };
+    if (speechSet.has(topic) && pack) payload.language = pack.language;
+    this.publish(topic, payload);
+    this._playerSwitchAt[topic] = this.now();
+  }
+
   _fanOutSwitch(slotId, mediaId, refresh) {
     const slot = this.config.slots[slotId];
     if (!slot || !slot.media) return;
-    const pack = catalogById(this.config.mediaCatalog, mediaId);
-    const speechSet = new Set(slot.media.speechTopics || []);
     const seen = new Set();
     const topics = [...(slot.media.switchTopics || []), ...(slot.media.speechTopics || [])];
     for (const topic of topics) {
       if (!topic || seen.has(topic)) continue;
       seen.add(topic);
-      const payload = { command: 'switchMedia', mediaId, refresh: !!refresh };
-      if (speechSet.has(topic) && pack) payload.language = pack.language;
-      this.publish(topic, payload);
+      this._publishSwitchTopic(slotId, topic, mediaId, refresh);
     }
   }
 
@@ -427,4 +460,4 @@ class PxmEngine {
   }
 }
 
-module.exports = { PxmEngine };
+module.exports = { PxmEngine, PLAYER_MEDIA_DEBOUNCE_MS };
